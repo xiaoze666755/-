@@ -1,0 +1,189 @@
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+
+local WINDUI_URL = "https://raw.githubusercontent.com/ylt410/roblox-Script/refs/heads/main/UI库"
+
+-- 防止你窗口热键/浮窗开关变量没定义，然后 Lua 又开始装死
+local PCWindowToggleKey = PCWindowToggleKey or Enum.KeyCode.RightControl
+local InitialOpenButtonEnabled = (InitialOpenButtonEnabled ~= false)
+
+-- 等游戏基础加载，避免 SetCore 太早调用失败
+if not game:IsLoaded() then
+    pcall(function()
+        game.Loaded:Wait()
+    end)
+end
+
+-- 更稳的通知函数：SetCore 失败会重试，不再静默消失
+local function FallbackNotify(title, content, duration)
+    title = tostring(title or "通知")
+    content = tostring(content or "")
+    duration = duration or 4
+
+    task.spawn(function()
+        for _ = 1, 30 do
+            local ok = pcall(function()
+                StarterGui:SetCore("SendNotification", {
+                    Title = title,
+                    Text = content,
+                    Duration = duration
+                })
+            end)
+
+            if ok then
+                return
+            end
+
+            task.wait(0.2)
+        end
+
+        warn("[通知失败] " .. title .. " | " .. content)
+    end)
+end
+
+-- 给任意函数加超时
+local function RunWithTimeout(name, timeout, callback)
+    local finished = false
+    local success = false
+    local result = nil
+    local err = nil
+
+    task.spawn(function()
+        local ok, res = pcall(callback)
+
+        success = ok
+
+        if ok then
+            result = res
+        else
+            err = res
+        end
+
+        finished = true
+    end)
+
+    local startTime = os.clock()
+
+    while not finished and os.clock() - startTime < timeout do
+        task.wait(0.05)
+    end
+
+    if not finished then
+        return false, nil, tostring(name) .. "超时"
+    end
+
+    if not success then
+        return false, nil, tostring(err)
+    end
+
+    return true, result, nil
+end
+
+-- 安全编译 loadstring
+local function CompileScript(content)
+    local ok, fnOrErr = pcall(function()
+        return loadstring(content)
+    end)
+
+    if not ok then
+        return false, nil, "loadstring 编译异常：" .. tostring(fnOrErr)
+    end
+
+    if type(fnOrErr) ~= "function" then
+        return false, nil, "loadstring 没有返回函数"
+    end
+
+    return true, fnOrErr, nil
+end
+
+-- WindUI 加载函数：HttpGet 和执行阶段都带超时
+local function tryLoadWindUI(retries, httpTimeout, executeTimeout)
+    retries = retries or 5
+    httpTimeout = httpTimeout or 7
+    executeTimeout = executeTimeout or 7
+
+    local lastErr = "未知错误"
+
+    for i = 1, retries do
+        print("[WindUI] 加载尝试 #" .. i)
+
+        FallbackNotify(
+            "加载中",
+            "正在加载 UI库，第 " .. i .. "/" .. retries .. " 次",
+            2
+        )
+
+        -- 加时间戳，避免部分环境缓存旧内容
+        local requestUrl = WINDUI_URL .. "?t=" .. tostring(math.floor(os.clock() * 100000)) .. "_" .. tostring(i)
+
+        local getOk, content, getErr = RunWithTimeout("HttpGet", httpTimeout, function()
+            return game:HttpGet(requestUrl)
+        end)
+
+        if not getOk then
+            lastErr = getErr
+        elseif type(content) ~= "string" or #content < 10 then
+            lastErr = "HttpGet 返回内容为空或异常"
+        else
+            local compileOk, compiledFunc, compileErr = CompileScript(content)
+
+            if not compileOk then
+                lastErr = compileErr
+            else
+                local runOk, lib, runErr = RunWithTimeout("UI库执行", executeTimeout, function()
+                    return compiledFunc()
+                end)
+
+                if runOk and lib then
+                    return lib, nil
+                end
+
+                lastErr = runErr or "UI库执行完成，但没有返回库对象"
+            end
+        end
+
+        warn("[WindUI] 第 " .. i .. " 次加载失败：" .. tostring(lastErr))
+
+        FallbackNotify(
+            "加载重试",
+            "UI库第 " .. i .. " 次加载失败：" .. tostring(lastErr),
+            3
+        )
+
+        task.wait(math.min(1 + i * 0.2, 2))
+    end
+
+    return nil, lastErr
+end
+
+-- 注入提示
+FallbackNotify("泽脚本", "基础脚本已加载，正在加载 UI库", 3)
+FallbackNotify("加载中", "开始载入 UI，网络差会自动重试", 3)
+
+-- 启动加载
+local WindUI, loadErr = tryLoadWindUI(5, 7, 7)
+
+-- 加载失败处理
+if not WindUI then
+    FallbackNotify(
+        "加载失败",
+        "UI库加载失败，请更换网络或重新注入\n错误：" .. tostring(loadErr),
+        10
+    )
+
+    warn("[WindUI] 最终加载失败：" .. tostring(loadErr))
+    return
+end
+
+-- 成功提示
+FallbackNotify("加载成功", "WindUI 已加载，脚本继续执行", 3)
+
+print("[WindUI] 加载成功")
+
+-- =================== 背景图预设 ===================
+local BgPresets = {
+    ["蓝色系少女"] = "https://raw.githubusercontent.com/ylt410/Liquid-glass-script/refs/heads/main/E7B068E4-0859-420F-A6B1-AF519C804C39.png",
+    ["粉色系少女"] = "https://raw.githubusercontent.com/ylt410/Liquid-glass-script/refs/heads/main/A19A17E7-7AF5-4E1D-998B-DA69A7C0CD77.png",
+    ["蓝色系猫娘"] = "https://raw.githubusercontent.com/ylt410/Liquid-glass-script/refs/heads/main/FB28370F-CEA8-4CC6-A6E0-51B7DF9071D3.png",
+    ["彩蛋"] = "https://raw.githubusercontent.com/ylt410/Liquid-glass-script/refs/heads/main/IMG_3671.jpeg",
+    ["紫色系御姐"] = "https://raw.githubusercontent.com/ylt410/Liquid-glass-script/refs/heads/
