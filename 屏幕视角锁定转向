@@ -1,0 +1,220 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local PlayerGui = player:WaitForChild("PlayerGui")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LockButtonGui"
+screenGui.Parent = PlayerGui
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+
+local logoLabel = Instance.new("TextLabel")
+logoLabel.Size = UDim2.new(0, 400, 0, 80)
+logoLabel.Position = UDim2.new(0.5, -200, 0.5, -40)
+logoLabel.BackgroundTransparency = 1
+logoLabel.Text = "由小泽制作"
+logoLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+logoLabel.TextSize = 48
+logoLabel.Font = Enum.Font.SourceSansBold
+logoLabel.TextStrokeTransparency = 0.5
+logoLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+logoLabel.ZIndex = 100
+logoLabel.Parent = screenGui
+
+local particles = {}
+for i = 1, 8 do
+	local particle = Instance.new("Frame")
+	particle.Size = UDim2.new(0, 10, 0, 10)
+	particle.BackgroundColor3 = Color3.fromRGB(255, 80 + math.random(0, 100), 30)
+	particle.BorderSizePixel = 0
+	particle.ZIndex = 99
+	particle.Parent = screenGui
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = particle
+	
+	particles[i] = {
+		frame = particle,
+		angle = (i - 1) * math.pi * 2 / 8,
+		radius = 60 + math.random(0, 40),
+		speed = 1 + math.random() * 2,
+		size = 6 + math.random(0, 8)
+	}
+end
+
+local startTime = tick()
+local running = true
+
+RunService.RenderStepped:Connect(function()
+	if not running then return end
+	
+	local elapsed = tick() - startTime
+	
+	if elapsed > 5 then
+		running = false
+		logoLabel.Visible = false
+		for _, p in pairs(particles) do
+			p.frame:Destroy()
+		end
+		return
+	end
+	
+	local fadeIn = math.min(elapsed / 0.5, 1)
+	local fadeOut = elapsed > 4 and math.max((5 - elapsed) / 1, 0) or 1
+	local alpha = fadeIn * fadeOut
+	
+	logoLabel.TextTransparency = 1 - alpha
+	logoLabel.TextStrokeTransparency = 1 - alpha * 0.5
+	
+	local centerX = screenGui.AbsoluteSize.X / 2
+	local centerY = screenGui.AbsoluteSize.Y / 2
+	
+	for _, p in pairs(particles) do
+		p.angle = p.angle + p.speed * 0.03
+		local x = centerX + math.cos(p.angle) * p.radius
+		local y = centerY + math.sin(p.angle) * p.radius
+		p.frame.Position = UDim2.new(0, x - p.frame.Size.X.Offset / 2, 0, y - p.frame.Size.Y.Offset / 2)
+		p.frame.BackgroundTransparency = 1 - alpha * 0.8
+	end
+end)
+
+local lockButton = Instance.new("TextButton")
+lockButton.Size = UDim2.new(0, 50, 0, 50)
+lockButton.Position = UDim2.new(0, 100, 0, 100)
+lockButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+lockButton.Text = "🔒"
+lockButton.TextSize = 30
+lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+lockButton.BorderSizePixel = 0
+lockButton.BackgroundTransparency = 0.2
+lockButton.AutoButtonColor = false
+lockButton.ZIndex = 10
+lockButton.Active = true
+lockButton.Selectable = false
+lockButton.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = lockButton
+
+local isLocked = false
+local dragging = false
+local touchStartPos = Vector2.zero
+local buttonStartPos = Vector2.zero
+local isTouchOnButton = false
+
+lockButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		touchStartPos = input.Position
+		buttonStartPos = lockButton.AbsolutePosition
+	elseif input.UserInputType == Enum.UserInputType.Touch then
+		local touchPos = input.Position
+		local btnPos = lockButton.AbsolutePosition
+		local btnSize = lockButton.AbsoluteSize
+		if touchPos.X >= btnPos.X and touchPos.X <= btnPos.X + btnSize.X and touchPos.Y >= btnPos.Y and touchPos.Y <= btnPos.Y + btnSize.Y then
+			isTouchOnButton = true
+			dragging = true
+			touchStartPos = touchPos
+			buttonStartPos = btnPos
+		end
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not dragging then return end
+	
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - touchStartPos
+		lockButton.Position = UDim2.new(0, buttonStartPos.X + delta.X, 0, buttonStartPos.Y + delta.Y)
+	elseif input.UserInputType == Enum.UserInputType.Touch then
+		if not isTouchOnButton then return end
+		local delta = input.Position - touchStartPos
+		lockButton.Position = UDim2.new(0, buttonStartPos.X + delta.X, 0, buttonStartPos.Y + delta.Y)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		local endPos = input.Position
+		local delta = (endPos - touchStartPos).Magnitude
+		if delta < 5 then
+			isLocked = not isLocked
+			if isLocked then
+				lockButton.TextColor3 = Color3.fromRGB(255, 80, 80)
+				lockButton.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+			else
+				lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+				lockButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+			end
+			updateCharacterAutoRotate()
+		end
+		dragging = false
+	elseif input.UserInputType == Enum.UserInputType.Touch then
+		if isTouchOnButton then
+			local endPos = input.Position
+			local delta = (endPos - touchStartPos).Magnitude
+			if delta < 5 then
+				isLocked = not isLocked
+				if isLocked then
+					lockButton.TextColor3 = Color3.fromRGB(255, 80, 80)
+					lockButton.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+				else
+					lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+					lockButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+				end
+				updateCharacterAutoRotate()
+			end
+		end
+		dragging = false
+		isTouchOnButton = false
+	end
+end)
+
+local currentHumanoid = nil
+
+function updateCharacterAutoRotate()
+	if currentHumanoid then
+		currentHumanoid.AutoRotate = not isLocked
+	end
+end
+
+local function setupCharacter(character)
+	local humanoid = character:WaitForChild("Humanoid")
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+	
+	currentHumanoid = humanoid
+	humanoid.AutoRotate = true
+	
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if not character or not character.Parent or not humanoid or not humanoid.Parent or not rootPart or not rootPart.Parent then
+			connection:Disconnect()
+			currentHumanoid = nil
+			return
+		end
+		
+		if not isLocked then return end
+		
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		
+		local cameraLook = camera.CFrame.LookVector
+		local flatLook = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
+		
+		if flatLook.Magnitude > 0 then
+			rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + flatLook)
+		end
+	end)
+end
+
+if player.Character then
+	setupCharacter(player.Character)
+end
+
+player.CharacterAdded:Connect(setupCharacter)
